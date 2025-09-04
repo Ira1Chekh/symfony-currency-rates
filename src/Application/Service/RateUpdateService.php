@@ -5,6 +5,7 @@ namespace App\Application\Service;
 use App\Domain\Entity\CryptoRate;
 use App\Domain\Repository\CryptoRateRepositoryInterface;
 use App\Domain\Service\RateProviderInterface;
+use App\Domain\ValueObject\CryptoPair;
 use Psr\Log\LoggerInterface;
 
 class RateUpdateService
@@ -20,12 +21,9 @@ class RateUpdateService
     {
         try {
             $price = $this->rateProvider->getCurrentRate($pair);
-            $cryptoRate = new CryptoRate($pair, $price);
-            $this->cryptoRateRepository->save($cryptoRate);
-        } catch (\Exception $e) {
-            $this->logger->error('Failed to update rate', ['pair' => $pair, 'error' => $e->getMessage()]);
-
-            throw new \RuntimeException(sprintf('Failed to update rate for %s: %s', $pair, $e->getMessage()), 0, $e);
+            $this->saveRate($pair, $price);
+        } catch (\Throwable $e) {
+            $this->logAndThrow($pair, $e, 'Failed to update rate');
         }
     }
 
@@ -34,9 +32,29 @@ class RateUpdateService
         foreach ($pairs as $pair) {
             try {
                 $this->updateRateForPair($pair);
-            } catch (\Exception $e) {
-                $this->logger->error('Error updating pair, continuing with others', ['pair' => $pair, 'error' => $e->getMessage()]);
+            } catch (\Throwable $e) {
+                $this->logger->error('Error updating pair, continuing with others', [
+                    'pair' => $pair,
+                    'error' => $e->getMessage()
+                ]);
             }
         }
+    }
+
+    private function saveRate(string $pair, float $price): void
+    {
+        $rate = new CryptoRate(CryptoPair::from($pair), $price);
+        $this->cryptoRateRepository->save($rate);
+    }
+
+    private function logAndThrow(string $pair, \Throwable $e, string $context): void
+    {
+        $this->logger->error($context, [
+            'pair' => $pair,
+            'error' => $e->getMessage(),
+            'exception' => $e
+        ]);
+
+        throw new \RuntimeException(sprintf('%s for %s: %s', $context, $pair, $e->getMessage()), 0, $e);
     }
 }

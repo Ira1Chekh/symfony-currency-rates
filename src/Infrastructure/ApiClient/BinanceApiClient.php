@@ -6,7 +6,6 @@ use App\Domain\Service\RateProviderInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
-use Symfony\Contracts\HttpClient\ResponseInterface;
 
 class BinanceApiClient implements RateProviderInterface
 {
@@ -25,17 +24,13 @@ class BinanceApiClient implements RateProviderInterface
         $url = $this->buildApiUrl($pair);
 
         try {
-            $response = $this->makeHttpRequest($url);
-            $this->validateResponseStatusCode($response, $pair);
-            $data = $response->toArray();
-            $this->validateResponseData($data, $pair);
-
-            return $this->extractPriceFromResponse($data, $pair);
+            $data = $this->fetchJsonFromApi($url, $pair);
+            return $this->extractAndValidatePrice($data, $pair);
 
         } catch (TransportExceptionInterface $e) {
-            $this->handleNetworkError($e, $pair);
-        } catch (\Exception $e) {
-            $this->handleUnexpectedError($e, $pair);
+            $this->handleError($e, $pair, 'Network error');
+        } catch (\Throwable $e) {
+            $this->handleError($e, $pair, 'Unexpected error');
         }
     }
 
@@ -46,34 +41,32 @@ class BinanceApiClient implements RateProviderInterface
         return sprintf('%s/ticker/price?symbol=%s', $this->apiUrl, $normalizedPair);
     }
 
-    private function makeHttpRequest(string $url): ResponseInterface
+    /**
+     * @throws TransportExceptionInterface
+     */
+    private function fetchJsonFromApi(string $url, string $pair): array
     {
-        return $this->httpClient->request('GET', $url, [
+        $response = $this->httpClient->request('GET', $url, [
             'timeout' => self::TIMEOUT,
             'headers' => [
                 'Accept' => 'application/json',
                 'User-Agent' => self::USER_AGENT
             ],
         ]);
-    }
 
-    /**
-     * @throws TransportExceptionInterface
-     */
-    private function validateResponseStatusCode(ResponseInterface $response, string $pair): void
-    {
-        $statusCode = $response->getStatusCode();
-
-        if ($statusCode !== 200) {
+        $status = $response->getStatusCode();
+        if ($status !== 200) {
             throw new \RuntimeException(sprintf(
                 'Binance API returned %d status code for pair %s',
-                $statusCode,
+                $status,
                 $pair
             ));
         }
+
+        return $response->toArray();
     }
 
-    private function validateResponseData(array $data, string $pair): void
+    private function extractAndValidatePrice(array $data, string $pair): float
     {
         if (!isset($data['price'])) {
             $this->logger->error('Binance API response missing price key', [
@@ -82,10 +75,7 @@ class BinanceApiClient implements RateProviderInterface
             ]);
             throw new \RuntimeException('Invalid response format from Binance API');
         }
-    }
 
-    private function extractPriceFromResponse(array $data, string $pair): float
-    {
         $price = (float) $data['price'];
 
         if ($price <= 0) {
@@ -99,28 +89,17 @@ class BinanceApiClient implements RateProviderInterface
         return $price;
     }
 
-    private function handleNetworkError(TransportExceptionInterface $e, string $pair): void
+    private function handleError(\Throwable $e, string $pair, string $context): void
     {
-        $this->logger->error('Network error while fetching rate from Binance', [
-            'error' => $e->getMessage(),
-            'pair' => $pair
-        ]);
-        throw new \RuntimeException(sprintf(
-            'Network error while fetching rate for %s: %s',
-            $pair,
-            $e->getMessage()
-        ), 0, $e);
-    }
-
-    private function handleUnexpectedError(\Exception $e, string $pair): void
-    {
-        $this->logger->error('Unexpected error while fetching rate from Binance', [
+        $this->logger->error("$context while fetching rate from Binance", [
             'error' => $e->getMessage(),
             'pair' => $pair,
             'exception' => $e
         ]);
+
         throw new \RuntimeException(sprintf(
-            'Unexpected error while fetching rate for %s: %s',
+            '%s for %s: %s',
+            $context,
             $pair,
             $e->getMessage()
         ), 0, $e);

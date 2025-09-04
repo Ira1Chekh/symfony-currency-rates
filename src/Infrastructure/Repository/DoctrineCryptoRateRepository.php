@@ -20,23 +20,26 @@ class DoctrineCryptoRateRepository extends ServiceEntityRepository implements Cr
         $this->getEntityManager()->flush();
     }
 
-    public function findByPairAndTimeRange(string $pair, \DateTimeInterface $startDate, \DateTimeInterface $endDate): array
-    {
+    public function findByPairAndTimeRange(
+        string $pair,
+        \DateTimeInterface $startDate,
+        \DateTimeInterface $endDate
+    ): array {
         return $this->createQueryBuilder('cr')
             ->andWhere('cr.pair = :pair')
             ->andWhere('cr.createdAt BETWEEN :start AND :end')
             ->setParameter('pair', $pair)
             ->setParameter('start', $startDate)
             ->setParameter('end', $endDate)
-            ->orderBy('cr.createdAt', 'ASC')
+            ->orderBy('cr.createdAt', 'DESC')
             ->getQuery()
             ->getResult();
     }
 
     public function findByPairAndDate(string $pair, \DateTimeInterface $date): array
     {
-        $startOfDay = (new \DateTimeImmutable($date->format('Y-m-d 00:00:00')));
-        $endOfDay = (new \DateTimeImmutable($date->format('Y-m-d 23:59:59')));
+        $startOfDay = $date->setTime(0, 0, 0);
+        $endOfDay = $date->setTime(23, 59, 59);
 
         return $this->findByPairAndTimeRange($pair, $startOfDay, $endOfDay);
     }

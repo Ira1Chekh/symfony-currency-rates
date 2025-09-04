@@ -2,6 +2,7 @@
 
 namespace App\Domain\Entity;
 
+use App\Domain\ValueObject\CryptoPair;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
@@ -21,9 +22,9 @@ class CryptoRate
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
 
-    public function __construct(string $pair, float $price)
+    public function __construct(CryptoPair $pair, float $price)
     {
-        $this->pair = $pair;
+        $this->pair = $pair->value;
         $this->price = $price;
         $this->createdAt = new \DateTimeImmutable();
     }
