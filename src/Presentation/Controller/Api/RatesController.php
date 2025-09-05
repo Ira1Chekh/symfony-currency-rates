@@ -12,6 +12,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Serializer\SerializerInterface;
 
 #[Route('/api/rates')]
 class RatesController extends AbstractController
@@ -21,6 +22,7 @@ class RatesController extends AbstractController
         private ValidatorInterface $validator,
         private GetRatesLast24h $getRatesLast24h,
         private GetRatesByDay $getRatesByDay,
+        private SerializerInterface $serializer
     ) {}
 
     #[Route('/last-24h', name: 'api_rates_last_24h', methods: ['GET'])]
@@ -30,15 +32,27 @@ class RatesController extends AbstractController
         $errors = $this->validateDto($dto);
 
         if ($errors) {
-            return $this->json(['error' => $errors], Response::HTTP_BAD_REQUEST);
+            return new JsonResponse(
+                ['error' => $errors],
+                Response::HTTP_BAD_REQUEST
+            );
         }
 
         try {
             $data = $this->getRatesLast24h->execute($dto);
-            return $this->json(['data' => $data]);
+            $json = $this->serializer->serialize(
+                ['data' => $data],
+                'json',
+                ['groups' => ['rates']]
+            );
+
+            return new JsonResponse($json, Response::HTTP_OK, [], true);
 
         } catch (\Throwable) {
-            return $this->json(['error' => 'Failed to fetch rates'], Response::HTTP_INTERNAL_SERVER_ERROR);
+            return new JsonResponse(
+                ['error' => 'failed to fetch rates'],
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            );
         }
     }
 
@@ -49,15 +63,27 @@ class RatesController extends AbstractController
         $errors = $this->validateDto($dto);
 
         if ($errors) {
-            return $this->json(['error' => $errors], Response::HTTP_BAD_REQUEST);
+            return new JsonResponse(
+                ['error' => $errors],
+                Response::HTTP_BAD_REQUEST
+            );
         }
 
         try {
             $data = $this->getRatesByDay->execute($dto);
-            return $this->json(['data' => $data]);
+            $json = $this->serializer->serialize(
+                ['data' => $data],
+                'json',
+                ['groups' => ['rates']]
+            );
+
+            return new JsonResponse($json, Response::HTTP_OK, [], true);
 
         } catch (\Throwable) {
-            return $this->json(['error' => 'Invalid date format or failed to fetch data'], Response::HTTP_BAD_REQUEST);
+            return new JsonResponse(
+                ['error' => 'failed to fetch rates'],
+                Response::HTTP_INTERNAL_SERVER_ERROR
+            );
         }
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Application\UseCase;
 
+use App\Application\DTO\RateResponseDto;
 use App\Application\DTO\RatesRequestDto;
 use App\Domain\Repository\CryptoRateRepositoryInterface;
 use Psr\Log\LoggerInterface;
@@ -44,11 +45,11 @@ class GetRatesByDay
 
     private function formatRatesResponse(array $rates): array
     {
-        return array_map(fn($rate) => [
-            'pair' => $rate->getPair(),
-            'price' => (float) $rate->getPrice(),
-            'timestamp' => $rate->getCreatedAt()->format(\DateTimeInterface::ATOM)
-        ], $rates);
+        return array_map(fn($rate) => new RateResponseDto(
+            pair: $rate->getPair(),
+            price: (float) $rate->getPrice(),
+            timestamp: $rate->getCreatedAt()->format(\DateTimeInterface::ATOM)
+        ), $rates);
     }
 
     private function createSafeCacheKey(string $prefix, string $pair, string $suffix): string

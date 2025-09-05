@@ -4,19 +4,51 @@ namespace App\Infrastructure\ApiClient;
 
 use App\Domain\Service\RateProviderInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpClient\Retry\GenericRetryStrategy;
+use Symfony\Component\HttpClient\RetryableHttpClient;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 class BinanceApiClient implements RateProviderInterface
 {
+    private RetryableHttpClient $retryableClient;
     private const int TIMEOUT = 10;
     private const string USER_AGENT = 'CryptoRateAPI/1.0';
+    private const array ALLOWED_API_HOSTS = [
+        'api.binance.com',
+        'api-gcp.binance.com',
+        'api1.binance.com',
+        'api2.binance.com',
+        'api3.binance.com',
+        'api4.binance.com',
+    ];
 
     public function __construct(
         private HttpClientInterface $httpClient,
         private LoggerInterface $logger,
         private string $apiUrl
     ) {
+        $this->apiUrl = rtrim($this->apiUrl, '/');
+
+        $host = parse_url($this->apiUrl, PHP_URL_HOST);
+
+        if ($host === false || !in_array($host, self::ALLOWED_API_HOSTS, true)) {
+            throw new \InvalidArgumentException(sprintf(
+                'Invalid Binance API URL configured: %s',
+                $this->apiUrl
+            ));
+        }
+
+        $this->retryableClient = new RetryableHttpClient(
+            $this->httpClient,
+            new GenericRetryStrategy(
+                [429, 500, 502, 503, 504],
+                1000,
+                2.0,
+                3000
+            ),
+            2
+        );
     }
 
     public function getCurrentRate(string $pair): float
@@ -46,7 +78,7 @@ class BinanceApiClient implements RateProviderInterface
      */
     private function fetchJsonFromApi(string $url, string $pair): array
     {
-        $response = $this->httpClient->request('GET', $url, [
+        $response = $this->retryableClient->request('GET', $url, [
             'timeout' => self::TIMEOUT,
             'headers' => [
                 'Accept' => 'application/json',

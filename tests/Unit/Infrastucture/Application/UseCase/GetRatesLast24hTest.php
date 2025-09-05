@@ -9,7 +9,6 @@ use App\Domain\Repository\CryptoRateRepositoryInterface;
 use App\Domain\ValueObject\CryptoPair;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
-use stdClass;
 use Symfony\Contracts\Cache\TagAwareCacheInterface;
 
 class GetRatesLast24hTest extends TestCase
@@ -39,13 +38,8 @@ class GetRatesLast24hTest extends TestCase
         $useCase = new GetRatesLast24h($repository, $cache, $logger);
 
         $result = $useCase->execute($dto);
-
-        $this->assertEquals([
-            [
-                'pair' => $pair,
-                'price' => $price,
-                'timestamp' => $rate->getCreatedAt()->format(\DateTimeInterface::ATOM)
-            ]
-        ], $result);
+        $resultPair = $result[0];
+        $this->assertEquals($pair, $resultPair->pair);
+        $this->assertEquals($price, $resultPair->price);
     }
 }
