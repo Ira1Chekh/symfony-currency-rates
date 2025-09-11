@@ -2,6 +2,7 @@
 
 namespace App\Application\Service;
 
+use App\Application\Exception\ServiceException;
 use App\Domain\Entity\CryptoRate;
 use App\Domain\Repository\CryptoRateRepositoryInterface;
 use App\Domain\Service\RateProviderInterface;
@@ -10,51 +11,93 @@ use Psr\Log\LoggerInterface;
 
 class RateUpdateService
 {
+    private const int BATCH_SIZE = 50;
+    private const int UPDATE_DELAY = 100000;
+
     public function __construct(
         private RateProviderInterface $rateProvider,
         private CryptoRateRepositoryInterface $cryptoRateRepository,
         private LoggerInterface $logger
-    ) {
-    }
+    ) {}
 
     public function updateRateForPair(string $pair): void
     {
         try {
             $price = $this->rateProvider->getCurrentRate($pair);
-            $this->saveRate($pair, $price);
+            $cryptoPair = CryptoPair::from($pair);
+            $rate = new CryptoRate($cryptoPair, $price);
+
+            $this->cryptoRateRepository->beginTransaction();
+            $this->cryptoRateRepository->save($rate);
+            $this->cryptoRateRepository->commit();
+
         } catch (\Throwable $e) {
-            $this->logAndThrow($pair, $e, 'Failed to update rate');
+            $this->cryptoRateRepository->rollback();
+            $this->logger->error('Failed to update rate for pair', [
+                'pair' => $pair,
+                'exception' => $e->getMessage()
+            ]);
+            throw new ServiceException('Failed to update rate for ' . $pair, 0);
         }
     }
 
     public function updateAllRates(array $pairs): void
     {
+        $rates = [];
+        $processed = 0;
+
         foreach ($pairs as $pair) {
             try {
-                $this->updateRateForPair($pair);
+                $price = $this->rateProvider->getCurrentRate($pair);
+                $cryptoPair = CryptoPair::from($pair);
+                $rates[] = new CryptoRate($cryptoPair, $price);
+
+                if (count($rates) >= self::BATCH_SIZE) {
+                    $this->processBatch($rates);
+                    $rates = [];
+                    usleep(self::UPDATE_DELAY);
+                }
+
+                $processed++;
+
             } catch (\Throwable $e) {
-                $this->logger->error('Error updating pair, continuing with others', [
+                $this->logger->error('Error updating pair, skipping', [
                     'pair' => $pair,
                     'error' => $e->getMessage()
                 ]);
             }
         }
-    }
 
-    private function saveRate(string $pair, float $price): void
-    {
-        $rate = new CryptoRate(CryptoPair::from($pair), $price);
-        $this->cryptoRateRepository->save($rate);
-    }
+        if (!empty($rates)) {
+            $this->processBatch($rates);
+        }
 
-    private function logAndThrow(string $pair, \Throwable $e, string $context): void
-    {
-        $this->logger->error($context, [
-            'pair' => $pair,
-            'error' => $e->getMessage(),
-            'exception' => $e
+        $this->logger->info('Rate update completed', [
+            'total_pairs' => count($pairs),
+            'processed' => $processed,
+            'failed' => count($pairs) - $processed
         ]);
+    }
 
-        throw new \RuntimeException(sprintf('%s for %s: %s', $context, $pair, $e->getMessage()), 0, $e);
+    private function processBatch(array $rates): void
+    {
+        try {
+            $this->cryptoRateRepository->beginTransaction();
+
+            foreach ($rates as $rate) {
+                $this->cryptoRateRepository->add($rate);
+            }
+
+            $this->cryptoRateRepository->flush();
+            $this->cryptoRateRepository->commit();
+
+        } catch (\Throwable $e) {
+            $this->cryptoRateRepository->rollback();
+            $this->logger->error('Batch processing failed', [
+                'batch_size' => count($rates),
+                'error' => $e->getMessage()
+            ]);
+            throw new ServiceException('Batch processing failed');
+        }
     }
 }

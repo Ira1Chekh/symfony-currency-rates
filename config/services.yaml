@@ -41,3 +41,7 @@ services:
     http_client:
         class: Symfony\Component\HttpClient\HttpClient
         factory: [ 'Symfony\Component\HttpClient\HttpClient', 'create' ]
+        
+    App\Infrastructure\Resolver\RatesRequestDtoResolver:
+        tags:
+            - { name: controller.argument_value_resolver, priority: 50 }

@@ -20,7 +20,7 @@ class UpdateCryptoRatesHandler
         try {
             $this->rateUpdateService->updateAllRates(CryptoPair::values());
         } catch (\Exception $e) {
-            $this->logger->error('Failed to update crypto rates', ['exception' => $e]);
+            $this->logger->error('Failed to update crypto rates', ['exception' => $e->getMessage()]);
         }
     }
 }

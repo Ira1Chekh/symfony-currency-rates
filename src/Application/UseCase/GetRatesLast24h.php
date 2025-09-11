@@ -4,6 +4,7 @@ namespace App\Application\UseCase;
 
 use App\Application\DTO\RateResponseDto;
 use App\Application\DTO\RatesRequestDto;
+use App\Application\Exception\UseCaseException;
 use App\Domain\Repository\CryptoRateRepositoryInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Contracts\Cache\ItemInterface;
@@ -39,7 +40,7 @@ class GetRatesLast24h
 
         } catch (\Throwable $e) {
             $this->logger->error('Failed to fetch last-24h rates', ['exception' => $e]);
-            throw $e;
+            throw new UseCaseException();
         }
     }
 
